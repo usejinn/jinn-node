@@ -2,10 +2,10 @@
 // It uses fetch and Web Crypto only, so it runs in Node 20+, Deno, Bun and browsers.
 //
 //   const jinn = new Jinn({ key: process.env.JINN_KEY! });
-//   const input = await jinn.upload(tar({ "ticket.json": JSON.stringify(ticket) }));
+//   const input = await jinn.upload(await pack({ "ticket.json": JSON.stringify(ticket) }));
 //   let run = await jinn.startRun("fnc_…", { prompt: "Answer this ticket.", input });
 //   run = await jinn.wait(run.id);
-//   const files = untar(await jinn.output(run)); // { "reply.md": Uint8Array, … }
+//   const files = await unpack(await jinn.output(run)); // { "reply.md": Uint8Array, … }
 
 export const DEFAULT_BASE_URL = "https://api.usejinn.com";
 
@@ -46,7 +46,7 @@ export interface Run {
   state: "queued" | "running" | "succeeded" | "failed";
   created_at: string; created_by: string; started_at?: string; ended_at?: string;
   failure?: Failure; detail?: string; message?: string;
-  /** A succeeded run's output folder as one .tar; url works for 15 minutes. */
+  /** A succeeded run's output folder as one .tar.gz; url works for 15 minutes. */
   output?: { sha256: string; bytes: number; file_count: number; url: string; files: { path: string; bytes: number; dir?: boolean }[] };
   usage?: {
     compute: { size: Size; seconds: number };
@@ -137,7 +137,7 @@ export class Jinn {
     return out;
   }
 
-  /** Upload a run's input folder as one .tar (see tar()); returns its file id. */
+  /** Upload a run's input folder as one .tar.gz (see pack()); returns its file id. */
   async upload(data: Uint8Array): Promise<string> {
     const sum = await sha256(data);
     const f = await this.call<{ id: string; url: string; method: string; headers: Record<string, string> }>("POST", "/v1/files", { bytes: data.byteLength, sha256: sum });
@@ -145,7 +145,7 @@ export class Jinn {
     if (!res.ok) throw new JinnError(res.status, "upload: " + (await res.text()).slice(0, 500));
     return f.id;
   }
-  /** Download a succeeded run's output .tar (see untar()), checked against its SHA-256. */
+  /** Download a succeeded run's output .tar.gz (see unpack()), checked against its SHA-256. */
   async output(r: Run): Promise<Uint8Array> {
     if (!r.output) throw new Error("jinn: the run has no output");
     const res = await fetch(r.output.url);
@@ -173,8 +173,22 @@ async function sha256(data: Uint8Array): Promise<string> {
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-/** tar packs files ({ "path/in/folder": bytes or text }) into a .tar for upload(). */
-export function tar(files: Record<string, Uint8Array | string>): Uint8Array {
+/** pack makes a .tar.gz of files ({ "path/in/folder": bytes or text }) for upload(). */
+export async function pack(files: Record<string, Uint8Array | string>): Promise<Uint8Array> {
+  return gzip(tarOf(files), new CompressionStream("gzip"));
+}
+
+/** unpack reads a run's output .tar.gz into { path: bytes } (files only). */
+export async function unpack(data: Uint8Array): Promise<Record<string, Uint8Array>> {
+  return untarOf(await gzip(data, new DecompressionStream("gzip")));
+}
+
+async function gzip(data: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+  const out = new Blob([data as BlobPart]).stream().pipeThrough(stream);
+  return new Uint8Array(await new Response(out).arrayBuffer());
+}
+
+function tarOf(files: Record<string, Uint8Array | string>): Uint8Array {
   const blocks: Uint8Array[] = [];
   for (const [name, content] of Object.entries(files)) {
     const body = typeof content === "string" ? enc.encode(content) : content;
@@ -199,8 +213,7 @@ export function tar(files: Record<string, Uint8Array | string>): Uint8Array {
   return out;
 }
 
-/** untar reads a run's output .tar into { path: bytes } (files only). */
-export function untar(data: Uint8Array): Record<string, Uint8Array> {
+function untarOf(data: Uint8Array): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
   for (let at = 0; at + 512 <= data.byteLength;) {
     const h = data.subarray(at, at + 512);

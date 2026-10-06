@@ -25,10 +25,10 @@ const jinn = new Jinn({ key: process.env.JINN_KEY! });
 ## Run a function
 
 ```ts
-import { Jinn, tar, untar } from "@usejinn/sdk";
+import { Jinn, pack, unpack } from "@usejinn/sdk";
 
-// Pack the input folder. It arrives in the run as /workspace/in.
-const input = await jinn.upload(tar({ "ticket.json": JSON.stringify(ticket) }));
+// Pack the input folder as a .tar.gz. It arrives in the run as /workspace/in.
+const input = await jinn.upload(await pack({ "ticket.json": JSON.stringify(ticket) }));
 
 let run = await jinn.startRun("fnc_5d2a91c07e4b38f6a1d0c2e9", {
   prompt: "Answer this ticket.",
@@ -39,7 +39,7 @@ let run = await jinn.startRun("fnc_5d2a91c07e4b38f6a1d0c2e9", {
 run = await jinn.wait(run.id); // reads the run every 5 seconds
 
 if (run.state === "succeeded") {
-  const files = untar(await jinn.output(run)); // checks the SHA-256
+  const files = await unpack(await jinn.output(run)); // checks the SHA-256
   console.log(new TextDecoder().decode(files["reply.md"]));
 } else {
   console.error(run.failure, run.detail);
@@ -69,8 +69,8 @@ export async function POST(request: Request) {
 | `run(id)` / `wait(id)` | Read a run, or read it until it ends. |
 | `runs({ function?, state?, before? })` | List runs, newest first, a page at a time. |
 | `log(id)` | The run's log so far: setup output, the agent's messages and tool calls. |
-| `upload(bytes)` / `tar(files)` | Upload an input folder as one `.tar`. Returns a `file_…` id. |
-| `output(run)` / `untar(bytes)` | Download a succeeded run's output folder and read its files. |
+| `upload(bytes)` / `pack(files)` | Upload an input folder as one `.tar.gz`. Returns a `file_…` id. |
+| `output(run)` / `unpack(bytes)` | Download a succeeded run's output `.tar.gz` and read its files. |
 | `functions()`, `function(id)`, `createFunction(name, def)`, `publish(id, def)` | Read and publish functions. Each publish is a new version. |
 | `providers()`, `createProvider(…)`, `publishProvider(…)` | Manage model providers and their keys. |
 | `bases()` | List the bases a function can boot. |

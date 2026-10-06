@@ -1,9 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tar, untar, verifyWebhook } from "../dist/index.js";
+import { pack, unpack, verifyWebhook } from "../dist/index.js";
+import { gunzipSync } from "node:zlib";
 
-test("tar and untar round-trip", () => {
-  const files = untar(tar({ "a.txt": "hello", "deep/b.bin": new Uint8Array([1, 2, 3]) }));
+test("pack and unpack round-trip through a real .tar.gz", async () => {
+  const packed = await pack({ "a.txt": "hello", "deep/b.bin": new Uint8Array([1, 2, 3]) });
+  assert.equal(gunzipSync(packed).subarray(257, 262).toString(), "ustar");
+  const files = await unpack(packed);
   assert.equal(new TextDecoder().decode(files["a.txt"]), "hello");
   assert.deepEqual([...files["deep/b.bin"]], [1, 2, 3]);
 });
