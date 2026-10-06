@@ -17,20 +17,22 @@ export interface CustomTool {
 }
 export interface EnvVar { name: string; value?: string; secret?: string; secret_id?: string }
 export type Size = "s" | "m" | "l" | "xl";
+/** A function's definition. The lists are optional; a list left out is empty. */
 export interface Definition {
   /** One of bases(). */
   base: string;
   /** Run as root before the agent, each in bash -euo pipefail -c. */
-  setup: string[];
+  setup?: string[];
   /** prv_…@3 or prv_…@latest. */
   provider: string;
   system_prompt: string;
-  tools: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
-  custom_tools: CustomTool[];
-  input_manifest: ManifestEntry[];
-  output_manifest: ManifestEntry[];
-  environment: EnvVar[];
+  tools?: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
+  custom_tools?: CustomTool[];
+  input_manifest?: ManifestEntry[];
+  output_manifest?: ManifestEntry[];
+  environment?: EnvVar[];
   size: Size;
+  /** 1 to 1440. Setup counts towards it. */
   timeout_minutes: number;
 }
 export interface Version extends Definition {
