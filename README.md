@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 | `bases()` | List the bases a function can boot. |
 | `verifyWebhook(publicKey, headers, body)` | Check a webhook and return its event. |
 
-A refused request throws a `JinnError` with the HTTP `status` and the API's message. For example, `402` means the account has no credit.
+A refused request throws a `JinnError` with the HTTP `status`, a stable `code` and the API's message. Switch on `code`: for example `no_credit`, `suspended` or `not_found`. The [API docs](https://docs.usejinn.com/api#errors) list every code.
 
 ## Links
 

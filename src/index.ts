@@ -61,9 +61,9 @@ export interface ProviderVersion { id: string; version: number; name: string; mo
 export interface Provider { id: string; name: string; latest: number; versions: ProviderVersion[] }
 export interface LogEvent { at: string; kind: string; [field: string]: unknown }
 
-/** The API's answer to a request it refused. */
+/** The API's answer to a request it refused. `code` is stable (no_credit, suspended, not_found, …); the message is for people. */
 export class JinnError extends Error {
-  constructor(readonly status: number, message: string) { super(`jinn: ${status}: ${message}`); }
+  constructor(readonly status: number, message: string, readonly code = "") { super(`jinn: ${status} ${code}: ${message}`); }
 }
 
 export class Jinn {
@@ -82,9 +82,9 @@ export class Jinn {
     });
     const text = await res.text();
     if (!res.ok) {
-      let msg = text;
-      try { msg = JSON.parse(text).error ?? text; } catch { /* not JSON */ }
-      throw new JinnError(res.status, msg);
+      let msg = text, code = "";
+      try { const e = JSON.parse(text); msg = e.error ?? text; code = e.code ?? ""; } catch { /* not JSON */ }
+      throw new JinnError(res.status, msg, code);
     }
     return JSON.parse(text) as T;
   }

@@ -1,6 +1,6 @@
 {
   "name": "@usejinn/sdk",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Jinn's API client: run agent work as a call.",
   "license": "MIT",
   "type": "module",
