@@ -5,9 +5,33 @@
   "license": "MIT",
   "type": "module",
   "homepage": "https://docs.usejinn.com/sdk",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "engines": { "node": ">=20" },
-  "scripts": { "build": "tsc", "test": "tsc && node --test test/*.test.mjs" },
-  "devDependencies": { "typescript": "7.0.2" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "test": "tsc && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/usejinn/jinn-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/usejinn/jinn-node/issues"
+  }
 }
