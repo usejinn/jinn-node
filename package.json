@@ -1,0 +1,13 @@
+{
+  "name": "@usejinn/sdk",
+  "version": "0.1.0",
+  "description": "Jinn's API client: run agent work as a call.",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://docs.usejinn.com/sdk",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": { "build": "tsc", "test": "tsc && node --test test/*.test.mjs" },
+  "devDependencies": { "typescript": "7.0.2" }
+}
