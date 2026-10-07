@@ -23,7 +23,7 @@ export interface Definition {
   base: string;
   /** Run as root before the agent, each in bash -euo pipefail -c. */
   setup?: string[];
-  /** prv_…@3 or prv_…@latest. */
+  /** prv_…@3 or prv_…@latest, or by name, openai@3 or openai@latest. Publishing stores a name as the id. */
   provider: string;
   system_prompt: string;
   tools?: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
