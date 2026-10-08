@@ -41,7 +41,7 @@ export interface Version extends Definition {
 export interface FunctionHead { id: string; name: string; latest: number; updated_at: string }
 export interface FunctionSummary extends FunctionHead { definition: Version; last: Run | null }
 
-export type Failure = "input" | "no_submission" | "timeout" | "provider" | "infrastructure" | "setup" | "suspended";
+export type Failure = "input" | "no_submission" | "timeout" | "provider" | "infrastructure" | "setup" | "suspended" | "credit";
 export interface Run {
   id: string; account: string; function: string; version: number; base: string; size: Size; provider: string;
   prompt: string; input?: string; webhook?: string; external_reference?: string;
