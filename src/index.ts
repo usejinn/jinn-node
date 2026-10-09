@@ -9,33 +9,41 @@
 
 export const DEFAULT_BASE_URL = "https://api.usejinn.com";
 
-export interface ManifestEntry { path: string; description?: string; max_bytes: number }
+/** max_bytes left out is the limit. */
+export interface ManifestEntry { path: string; description?: string; max_bytes?: number }
 export interface CustomTool {
   name: string; description: string; parameters: Record<string, unknown>; url: string;
   /** Sent once; later versions send the secret_id Jinn returned. */
-  secret?: string; secret_id?: string; timeout_seconds: number;
+  secret?: string; secret_id?: string; /** 30 if left out. */ timeout_seconds?: number;
 }
 export interface EnvVar { name: string; value?: string; secret?: string; secret_id?: string }
 export type Size = "s" | "m" | "l" | "xl";
-/** A function's definition. The lists are optional; a list left out is empty. */
+/**
+ * A function's definition. Only system_prompt is required. Publishing fills in
+ * what is left out, and the version stores it: base the newest base, provider
+ * the account's only provider, size "m", timeout_minutes 30, tools bash, read,
+ * write and edit ([] is no tools), other lists empty.
+ */
 export interface Definition {
   /** One of bases(). */
-  base: string;
+  base?: string;
   /** Run as root before the agent, each in bash -euo pipefail -c. */
   setup?: string[];
-  /** prv_…@3 or prv_…@latest, or by name, openai@3 or openai@latest. Publishing stores a name as the id. */
-  provider: string;
+  /** openai (its latest version), openai@3, prv_…@3 or prv_…@latest. Publishing stores a name as the id. */
+  provider?: string;
   system_prompt: string;
   tools?: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
   custom_tools?: CustomTool[];
   input_manifest?: ManifestEntry[];
   output_manifest?: ManifestEntry[];
   environment?: EnvVar[];
-  size: Size;
+  size?: Size;
   /** 1 to 1440. Setup counts towards it. */
-  timeout_minutes: number;
+  timeout_minutes?: number;
 }
+/** A published version: every default filled in. */
 export interface Version extends Definition {
+  base: string; provider: string; size: Size; timeout_minutes: number; tools: NonNullable<Definition["tools"]>;
   function: string; version: number; external_reference?: string; created_at: string; created_by: string;
 }
 export interface FunctionHead { id: string; name: string; latest: number; updated_at: string }
