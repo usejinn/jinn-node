@@ -23,7 +23,7 @@ export type Size = "s" | "m" | "l" | "xl";
  * entry) are required. Publishing fills in
  * what is left out, and the version stores it: base the newest base, provider
  * the account's only provider, size "m", timeout_minutes 30, tools bash, read,
- * write and edit ([] is no tools), other lists empty.
+ * write, edit and web_search ([] is no tools), other lists empty.
  */
 export interface Definition {
   /** One of bases(). */
