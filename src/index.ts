@@ -19,7 +19,8 @@ export interface CustomTool {
 export interface EnvVar { name: string; value?: string; secret?: string; secret_id?: string }
 export type Size = "s" | "m" | "l" | "xl";
 /**
- * A function's definition. Only system_prompt is required. Publishing fills in
+ * A function's definition. system_prompt and output_manifest (at least one
+ * entry) are required. Publishing fills in
  * what is left out, and the version stores it: base the newest base, provider
  * the account's only provider, size "m", timeout_minutes 30, tools bash, read,
  * write and edit ([] is no tools), other lists empty.
@@ -35,7 +36,8 @@ export interface Definition {
   tools?: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
   custom_tools?: CustomTool[];
   input_manifest?: ManifestEntry[];
-  output_manifest?: ManifestEntry[];
+  /** At least one: a function always returns something. */
+  output_manifest: ManifestEntry[];
   environment?: EnvVar[];
   size?: Size;
   /** 1 to 1440. Setup counts towards it. */
