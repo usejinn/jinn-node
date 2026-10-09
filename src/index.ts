@@ -22,8 +22,8 @@ export type Size = "s" | "m" | "l" | "xl";
  * A function's definition. system_prompt and output_manifest (at least one
  * entry) are required. Publishing fills in
  * what is left out, and the version stores it: base the newest base, provider
- * the account's only provider, size "m", timeout_minutes 30, tools bash, read,
- * write, edit and web_search ([] is no tools), other lists empty.
+ * the account's only provider, size "m", timeout_minutes 30, tools all of them
+ * ([] is no tools), other lists empty.
  */
 export interface Definition {
   /** One of bases(). */
