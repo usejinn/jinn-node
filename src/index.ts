@@ -1,11 +1,19 @@
 // @usejinn/sdk: the TypeScript client for Jinn's API (https://api.usejinn.com/v1).
 // It uses fetch and Web Crypto only, so it runs in Node 20+, Deno, Bun and browsers.
 //
+// A function with an agent takes a prompt and returns a folder:
+//
 //   const jinn = new Jinn({ key: process.env.JINN_KEY! });
 //   const input = await jinn.upload(await pack({ "ticket.json": JSON.stringify(ticket) }));
 //   let run = await jinn.startRun("fnc_…", { prompt: "Answer this ticket.", input });
 //   run = await jinn.wait(run.id);
 //   const files = await unpack(await jinn.output(run)); // { "reply.md": Uint8Array, … }
+//
+// A function without one is a VM you drive with commands:
+//
+//   const run = await jinn.startRun("fnc_…", {});
+//   const res = await jinn.exec(run.id, { command: "npm test" });
+//   await jinn.finish(run.id, { state: "succeeded" });
 
 export const DEFAULT_BASE_URL = "https://api.usejinn.com";
 
@@ -18,58 +26,102 @@ export interface CustomTool {
 }
 export interface EnvVar { name: string; value?: string; secret?: string; secret_id?: string }
 export type Size = "s" | "m" | "l" | "xl";
-/**
- * A function's definition. system_prompt and output_manifest (at least one
- * entry) are required. Publishing fills in
- * what is left out, and the version stores it: base the newest base, provider
- * the account's only provider, size "m", timeout_minutes 30, tools all of them
- * ([] is no tools), other lists empty.
- */
-export interface Definition {
-  /** One of bases(). */
-  base?: string;
-  /** Run as root before the agent, each in bash -euo pipefail -c. */
-  setup?: string[];
-  /** openai (its latest version), openai@3, prv_…@3 or prv_…@latest. Publishing stores a name as the id. */
+export type StandardTool = "bash" | "read" | "write" | "edit" | "screenshot" | "web_search";
+/** Jinn's agent: a model with tools, working until it calls complete (the run succeeds) or give_up (it fails). */
+export interface Agent {
+  /** openai (its latest version), openai@3, prv_…@3 or prv_…@latest. Publishing stores a name as the id. Left out: the account's only provider. */
   provider?: string;
   system_prompt: string;
-  tools?: ("bash" | "read" | "write" | "edit" | "screenshot" | "web_search")[];
+  /** Left out: all of them. [] is none. complete and give_up are always there. */
+  tools?: StandardTool[];
   custom_tools?: CustomTool[];
-  input_manifest?: ManifestEntry[];
-  /** At least one: a function always returns something. */
-  output_manifest: ManifestEntry[];
+}
+/**
+ * A function's definition. Every field is optional; publishing fills in what
+ * is left out, and the version stores it: image the newest base, size "m",
+ * lists empty, no timeout. A definition with an agent is agentic: its runs
+ * take a prompt.
+ */
+export interface Definition {
+  /** The disk a run boots: an img_… or a base's name (images()). */
+  image?: string;
+  /** Run as root at the start of every run, each in bash -euo pipefail -c. They must be safe to repeat. */
+  setup?: string[];
   environment?: EnvVar[];
   size?: Size;
-  /** 1 to 1440. Setup counts towards it. */
+  /** 1 to 1440, setup included. Left out: none. */
   timeout_minutes?: number;
+  input_manifest?: ManifestEntry[];
+  /** What /workspace/out must hold when the run finishes succeeded. */
+  output_manifest?: ManifestEntry[];
+  /** Save the run's disk as an image when it succeeds, and when Jinn stops it. */
+  output_image?: boolean;
+  agent?: Agent;
 }
 /** A published version: every default filled in. */
 export interface Version extends Definition {
-  base: string; provider: string; size: Size; timeout_minutes: number; tools: NonNullable<Definition["tools"]>;
+  image: string; size: Size;
   function: string; version: number; external_reference?: string; created_at: string; created_by: string;
 }
 export interface FunctionHead { id: string; name: string; latest: number; updated_at: string }
 export interface FunctionSummary extends FunctionHead { definition: Version; last: Run | null }
 
-export type Failure = "input" | "no_submission" | "timeout" | "provider" | "infrastructure" | "setup" | "suspended" | "credit";
+export type Failure = "input" | "incomplete" | "timeout" | "provider" | "infrastructure" | "setup" | "suspended" | "credit" | "maintenance";
 export interface Run {
-  id: string; account: string; function: string; version: number; base: string; size: Size; provider: string;
-  prompt: string; input?: string; webhook?: string; external_reference?: string;
+  id: string; account: string; function: string; version: number;
+  /** The disk the run booted. */
+  image: string; size: Size; agent: boolean; provider?: string;
+  prompt?: string; input?: string; webhook?: string; external_reference?: string;
   state: "queued" | "running" | "succeeded" | "failed";
-  created_at: string; created_by: string; started_at?: string; ended_at?: string;
+  created_at: string; created_by: string; started_at?: string; ready_at?: string; ended_at?: string;
   failure?: Failure; detail?: string; message?: string;
-  /** A succeeded run's output folder as one .tar.gz; url works for 15 minutes. */
-  output?: { sha256: string; bytes: number; file_count: number; url: string; files: { path: string; bytes: number; dir?: boolean }[] };
+  /** What the run returned: its output folder as one .tar.gz (url works for 15 minutes), and the image it saved. */
+  output?: { sha256?: string; bytes?: number; file_count?: number; url?: string; files?: { path: string; bytes: number; dir?: boolean }[]; image?: string };
   usage?: {
-    compute: { size: Size; seconds: number };
+    compute: { size: Size; seconds: number; bytes_in: number; bytes_out: number };
     model: { calls: number; input_tokens: number; cache_read_tokens: number; cache_write_tokens: number; output_tokens: number; web_searches: number };
   };
+  /** Counts the run's changes, its commands' included. */
+  sequence: number;
+  /** When Jinn will end the run to replace its host. */
+  maintenance_at?: string;
 }
-export interface RunRequest { version?: number; prompt: string; input?: string; webhook?: string; external_reference?: string }
+export interface RunRequest {
+  version?: number;
+  /** Required for a function with an agent; refused for one without. */
+  prompt?: string;
+  /** The disk to boot instead of the function's. */
+  image?: string;
+  /** Added to the function's variables; a name the function has takes this value. */
+  environment?: EnvVar[];
+  input?: string; webhook?: string; external_reference?: string;
+}
 export interface Model { provider: "openai" | "anthropic" | "xai"; model: string; reasoning_effort?: string; compact_at_tokens: number; max_output_tokens?: number }
 export interface ProviderVersion { id: string; version: number; name: string; model: Model; created_at: string; created_by: string }
 export interface Provider { id: string; name: string; latest: number; versions: ProviderVersion[] }
 export interface LogEvent { at: string; kind: string; [field: string]: unknown }
+
+export type CommandKind = "bash" | "read" | "write" | "edit" | "list" | "put" | "get" | "finish";
+export interface BashArgs { command: string; workdir?: string; timeout_ms?: number; env?: Record<string, string> }
+export interface BashResult { exit_code: number; output: string; output_bytes: number; truncated?: boolean; timed_out?: boolean; oom_killed?: boolean; error?: string }
+export interface FinishArgs { state: "succeeded" | "failed"; detail?: string }
+export interface FinishResult { accepted: boolean; problems?: string[] }
+export interface Command {
+  id: string; run: string; kind: CommandKind; arguments: Record<string, unknown>;
+  /** caller, or agent for Jinn's agent's commands. */
+  source: "caller" | "agent"; call_id?: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  result?: Record<string, unknown>; error?: string;
+  output_bytes: number; sequence: number;
+  created_at: string; created_by: string; started_at?: string; ended_at?: string;
+  /** What a get delivered; the image a read showed. Links work for 15 minutes. */
+  download_url?: string; image_url?: string;
+}
+export interface Image {
+  id: string; base?: boolean; run?: string; function?: string; external_reference?: string;
+  sha256: string; bytes: number; disk_bytes: number; created_at: string;
+}
+export interface Tool { name: string; description: string; parameters: Record<string, unknown> }
 
 /** The API's answer to a request it refused. `code` is stable (no_credit, suspended, not_found, …); the message is for people. */
 export class JinnError extends Error {
@@ -99,8 +151,20 @@ export class Jinn {
     return JSON.parse(text) as T;
   }
 
-  async bases(): Promise<{ name: string; sha256: string; bytes: number }[]> {
-    return (await this.call<{ bases: { name: string; sha256: string; bytes: number }[] }>("GET", "/v1/bases")).bases;
+  /** The account's images, newest first, then Jinn's bases. */
+  async images(): Promise<Image[]> {
+    return (await this.call<{ images: Image[] }>("GET", "/v1/images")).images;
+  }
+  image(id: string): Promise<Image> {
+    return this.call("GET", `/v1/images/${encodeURIComponent(id)}`);
+  }
+  /** Delete one of the account's images. Runs that would boot it fail with image_not_found. */
+  async deleteImage(id: string): Promise<void> {
+    await this.call("DELETE", `/v1/images/${encodeURIComponent(id)}`);
+  }
+  /** The standard tools' schemas, as Jinn's agent shows them to its model. */
+  async tools(): Promise<Tool[]> {
+    return (await this.call<{ tools: Tool[] }>("GET", "/v1/tools")).tools;
   }
   async functions(): Promise<FunctionSummary[]> {
     return (await this.call<{ functions: FunctionSummary[] }>("GET", "/v1/functions")).functions;
@@ -132,12 +196,84 @@ export class Jinn {
       await new Promise((ok) => setTimeout(ok, 5000));
     }
   }
+  /** Read the run every two seconds until its setup has finished, or it ended. */
+  async waitReady(id: string, signal?: AbortSignal): Promise<Run> {
+    for (;;) {
+      const r = await this.run(id);
+      if (r.ready_at || r.state === "succeeded" || r.state === "failed") return r;
+      signal?.throwIfAborted();
+      await new Promise((ok) => setTimeout(ok, 2000));
+    }
+  }
+
+  /** Send a command. Commands run side by side; one sent while the run is queued starts when its setup has finished. */
+  sendCommand(run: string, kind: CommandKind, args: Record<string, unknown>): Promise<Command> {
+    return this.call("POST", `/v1/runs/${encodeURIComponent(run)}/commands`, { kind, arguments: args });
+  }
+  /** Read a command, waiting up to waitSeconds (at most 25) for it to end. */
+  command(run: string, id: string, waitSeconds = 0): Promise<Command> {
+    const w = waitSeconds > 0 ? `?wait=${Math.min(25, Math.floor(waitSeconds))}` : "";
+    return this.call("GET", `/v1/runs/${encodeURIComponent(run)}/commands/${encodeURIComponent(id)}${w}`);
+  }
+  /** Read a command until it ends. */
+  async waitCommand(run: string, id: string, signal?: AbortSignal): Promise<Command> {
+    for (;;) {
+      const c = await this.command(run, id, 25);
+      if (c.state === "succeeded" || c.state === "failed" || c.state === "cancelled") return c;
+      signal?.throwIfAborted();
+    }
+  }
+  /** The run's commands that changed after a sequence, in order, and the run's sequence: the next since. */
+  commands(run: string, since = 0, waitSeconds = 0): Promise<{ state: Run["state"]; sequence: number; commands: Command[] }> {
+    const p = new URLSearchParams({ since: String(since) });
+    if (waitSeconds > 0) p.set("wait", String(Math.min(25, Math.floor(waitSeconds))));
+    return this.call("GET", `/v1/runs/${encodeURIComponent(run)}/commands?${p}`);
+  }
+  /** What a bash command wrote from an offset on; next is where to read next. */
+  commandOutput(run: string, id: string, after = 0, waitSeconds = 0): Promise<{ output: string; next: number; output_bytes: number; stored_bytes: number; done: boolean }> {
+    const p = new URLSearchParams({ after: String(after) });
+    if (waitSeconds > 0) p.set("wait", String(Math.min(25, Math.floor(waitSeconds))));
+    return this.call("GET", `/v1/runs/${encodeURIComponent(run)}/commands/${encodeURIComponent(id)}/output?${p}`);
+  }
+  cancelCommand(run: string, id: string): Promise<Command> {
+    return this.call("POST", `/v1/runs/${encodeURIComponent(run)}/commands/${encodeURIComponent(id)}/cancel`);
+  }
+  /** Run a bash command and wait for its result. */
+  async exec(run: string, args: BashArgs): Promise<BashResult> {
+    const c = await this.waitCommand(run, (await this.sendCommand(run, "bash", { ...args })).id);
+    if (c.state !== "succeeded") throw new Error(`jinn: the command ${c.state}: ${c.error ?? ""}`);
+    return c.result as unknown as BashResult;
+  }
+  /** Copy bytes into a run at path. */
+  async put(run: string, data: Uint8Array, path: string): Promise<void> {
+    const file = await this.upload(data);
+    const c = await this.waitCommand(run, (await this.sendCommand(run, "put", { file, path })).id);
+    const err = c.state !== "succeeded" ? `the command ${c.state}: ${c.error ?? ""}` : (c.result?.error as string | undefined);
+    if (err) throw new Error("jinn: " + err);
+  }
+  /** Copy a file, or a folder as a .tar.gz (see unpack()), out of a run. */
+  async get(run: string, path: string): Promise<{ data: Uint8Array; folder: boolean }> {
+    const c = await this.waitCommand(run, (await this.sendCommand(run, "get", { path })).id);
+    const err = c.state !== "succeeded" ? `the command ${c.state}: ${c.error ?? ""}` : (c.result?.error as string | undefined);
+    if (err) throw new Error("jinn: " + err);
+    const folder = c.result?.folder === true;
+    if (!c.download_url) return { data: new Uint8Array(), folder };
+    const res = await fetch(c.download_url);
+    if (!res.ok) throw new JinnError(res.status, "get");
+    return { data: new Uint8Array(await res.arrayBuffer()), folder };
+  }
+  /** End a run: succeeded (its output checked and delivered), or failed with a detail. An output that misses its manifest is not accepted, and the run goes on. */
+  async finish(run: string, args: FinishArgs): Promise<FinishResult> {
+    const c = await this.waitCommand(run, (await this.sendCommand(run, "finish", { ...args })).id);
+    if (c.state !== "succeeded") throw new Error(`jinn: the finish ${c.state}: ${c.error ?? ""}`);
+    return c.result as unknown as FinishResult;
+  }
   /** Runs newest first, a page at a time. A run key must name a function. */
   runs(q: { function?: string; state?: "active" | "succeeded" | "failed"; before?: string } = {}): Promise<{ runs: Run[]; next?: string }> {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
     return this.call("GET", `/v1/runs?${p}`);
   }
-  /** The run's log so far. A running run adds to it about every 30 seconds. */
+  /** The run's log so far, in time order. A running run adds to it about every 30 seconds. */
   async log(id: string): Promise<LogEvent[]> {
     const { parts } = await this.call<{ parts: string[] }>("GET", `/v1/runs/${encodeURIComponent(id)}/log`);
     const out: LogEvent[] = [];
@@ -146,10 +282,10 @@ export class Jinn {
       if (!res.ok) throw new JinnError(res.status, "log part");
       for (const line of (await res.text()).split("\n")) if (line.trim()) out.push(JSON.parse(line));
     }
-    return out;
+    return out.sort((a, b) => a.at.localeCompare(b.at));
   }
 
-  /** Upload a run's input folder as one .tar.gz (see pack()); returns its file id. */
+  /** Upload a run's input folder as one .tar.gz (see pack()), or a file for put(); returns its file id. */
   async upload(data: Uint8Array): Promise<string> {
     const sum = await sha256(data);
     const f = await this.call<{ id: string; url: string; method: string; headers: Record<string, string> }>("POST", "/v1/files", { bytes: data.byteLength, sha256: sum });
@@ -159,7 +295,7 @@ export class Jinn {
   }
   /** Download a succeeded run's output .tar.gz (see unpack()), checked against its SHA-256. */
   async output(r: Run): Promise<Uint8Array> {
-    if (!r.output) throw new Error("jinn: the run has no output");
+    if (!r.output?.url) throw new Error("jinn: the run has no output");
     const res = await fetch(r.output.url);
     if (!res.ok) throw new JinnError(res.status, "output");
     const data = new Uint8Array(await res.arrayBuffer());
@@ -241,8 +377,10 @@ function untarOf(data: Uint8Array): Record<string, Uint8Array> {
   return files;
 }
 
-/** The body of a webhook: run.succeeded or run.failed, with the run. */
-export interface WebhookEvent { id: string; type: "run.succeeded" | "run.failed"; created: string; data: Run }
+/** The body of a webhook: a run's event with the run, or command.finished with the command. sequence is the run's. */
+export type WebhookEvent =
+  | { id: string; type: "run.running" | "run.maintenance" | "run.succeeded" | "run.failed"; created: string; sequence: number; data: Run }
+  | { id: string; type: "command.finished"; created: string; sequence: number; data: Command };
 
 /**
  * verifyWebhook checks a webhook (Standard Webhooks, v1a, Ed25519) with your

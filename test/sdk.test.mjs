@@ -22,3 +22,29 @@ test("verifyWebhook accepts its key's signature and refuses another's", async ()
   assert.equal((await verifyWebhook(pub, headers, body)).data.id, "run_1");
   await assert.rejects(verifyWebhook(pub, headers, body.replace("run_1", "run_2")));
 });
+
+test("exec sends a bash command and long-polls its result", async () => {
+  const { Jinn } = await import("../dist/index.js");
+  const sent = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = new URL(url);
+    if (init.method === "POST" && u.pathname === "/v1/runs/run_1/commands") {
+      sent.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ id: "cmd_1", state: "queued" }));
+    }
+    if (u.pathname === "/v1/runs/run_1/commands/cmd_1" && u.searchParams.get("wait") === "25") {
+      return new Response(JSON.stringify({ id: "cmd_1", state: "succeeded", result: { exit_code: 0, output: "ok", output_bytes: 2 } }));
+    }
+    return new Response(JSON.stringify({ code: "not_found", error: "no" }), { status: 404 });
+  };
+  try {
+    const jinn = new Jinn({ key: "k", baseURL: "https://api.test" });
+    const res = await jinn.exec("run_1", { command: "make", env: { CI: "1" } });
+    assert.equal(res.output, "ok");
+    assert.deepEqual(sent[0], { kind: "bash", arguments: { command: "make", env: { CI: "1" } } });
+    await assert.rejects(jinn.run("run_x"), (e) => e.code === "not_found");
+  } finally {
+    globalThis.fetch = real;
+  }
+});
