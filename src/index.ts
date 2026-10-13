@@ -101,7 +101,7 @@ export interface ProviderVersion { id: string; version: number; name: string; mo
 export interface Provider { id: string; name: string; latest: number; versions: ProviderVersion[] }
 export interface LogEvent { at: string; kind: string; [field: string]: unknown }
 
-export type CommandKind = "bash" | "read" | "write" | "edit" | "list" | "put" | "get" | "finish";
+export type CommandKind = "bash" | "read" | "write" | "edit" | "list" | "put" | "get" | "finish" | "terminal";
 export interface BashArgs { command: string; workdir?: string; timeout_ms?: number; env?: Record<string, string> }
 export interface BashResult { exit_code: number; output: string; output_bytes: number; truncated?: boolean; timed_out?: boolean; oom_killed?: boolean; error?: string }
 export interface FinishArgs { state: "succeeded" | "failed"; detail?: string }
@@ -268,6 +268,21 @@ export class Jinn {
     if (c.state !== "succeeded") throw new Error(`jinn: the finish ${c.state}: ${c.error ?? ""}`);
     return c.result as unknown as FinishResult;
   }
+  /**
+   * Start a shell in a run: a login shell as root in /workspace, reached through Jinn's relay and sealed end to end.
+   * Connect a WebSocket to `${ticket.relay_url}?route=${ticket.route}&side=caller` (binaryType "arraybuffer"), send
+   * `channel.seal(TERMINAL_INPUT, bytes)` and `channel.seal(TERMINAL_RESIZE, rowsCols)`, and `channel.open` each message:
+   * TERMINAL_OUTPUT is what the shell wrote, TERMINAL_EXIT its status (an int32).
+   */
+  async openTerminal(run: string, rows: number, cols: number, env?: Record<string, string>): Promise<{ ticket: TerminalTicket; channel: TerminalChannel }> {
+    const pair = await terminalKeyPair();
+    const args: Record<string, unknown> = { rows, cols, public_key: await terminalPublicKey(pair) };
+    if (env) args.env = env;
+    const c = await this.waitCommand(run, (await this.sendCommand(run, "terminal", args)).id);
+    if (c.state !== "succeeded") throw new Error(`jinn: the terminal ${c.state}: ${c.error ?? ""}`);
+    const ticket = c.result as unknown as TerminalTicket;
+    return { ticket, channel: await terminalChannel(pair, ticket.public_key, true) };
+  }
   /** Runs newest first, a page at a time. A run key must name a function. */
   runs(q: { function?: string; state?: "active" | "succeeded" | "failed"; before?: string } = {}): Promise<{ runs: Run[]; next?: string }> {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
@@ -399,4 +414,77 @@ export async function verifyWebhook(publicKey: string, headers: Headers | Record
     if (v === "v1a" && sig && (await crypto.subtle.verify("Ed25519", key, b64(sig), signed))) return JSON.parse(body);
   }
   throw new Error("jinn: no signature matches");
+}
+
+// ── Terminals ──
+// The caller's half of a terminal's channel, as Jinn's service seals it: an ECDH P-256 key pair, two AES-256-GCM
+// keys (one per direction) derived with HKDF-SHA-256, and frames of a kind (one byte), a sequence (eight bytes) and
+// the sealed data. A test vector keeps it equal to the service's.
+
+/** Terminal frame kinds. */
+export const TERMINAL_INPUT = 1, TERMINAL_OUTPUT = 2, TERMINAL_RESIZE = 3, TERMINAL_EXIT = 4;
+
+/** A terminal command's result: where to connect, and the host's half of the key. */
+export interface TerminalTicket { relay_url: string; route: string; public_key: string }
+
+/** Seals and opens one end's frames, in order. */
+export interface TerminalChannel {
+  seal(kind: number, data: Uint8Array): Promise<Uint8Array>;
+  open(frame: ArrayBuffer | Uint8Array): Promise<{ kind: number; data: Uint8Array }>;
+}
+
+const b64url = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const join = (...parts: Uint8Array[]) => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let at = 0; for (const p of parts) { out.set(p, at); at += p.length; } return out; };
+const nonceOf = (seq: bigint) => { const n = new Uint8Array(12); new DataView(n.buffer).setBigUint64(4, seq); return n; };
+
+/** A key pair for one end of a terminal. */
+export function terminalKeyPair(): Promise<CryptoKeyPair> {
+  return crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]) as Promise<CryptoKeyPair>;
+}
+
+/** A key pair's public key, uncompressed, base64url. */
+export async function terminalPublicKey(pair: CryptoKeyPair): Promise<string> {
+  return b64url(await crypto.subtle.exportKey("raw", pair.publicKey));
+}
+
+/** One end's channel, from its key pair and the other end's public key. */
+export async function terminalChannel(pair: CryptoKeyPair, peer: string, caller: boolean): Promise<TerminalChannel> {
+  const subtle = crypto.subtle, enc = new TextEncoder(), peerRaw = unb64url(peer);
+  const peerKey = await subtle.importKey("raw", peerRaw as BufferSource, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const secret = await subtle.deriveBits({ name: "ECDH", public: peerKey }, pair.privateKey, 256);
+  const mine = new Uint8Array(await subtle.exportKey("raw", pair.publicKey));
+  const salt = await subtle.digest("SHA-256", join(enc.encode("jinn-terminal-v1\0"), caller ? mine : peerRaw, caller ? peerRaw : mine) as BufferSource);
+  const ikm = await subtle.importKey("raw", secret, "HKDF", false, ["deriveBits"]);
+  const keys = new Uint8Array(await subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info: enc.encode("jinn-terminal-v1 keys") }, ikm, 512));
+  const aes = (raw: Uint8Array) => subtle.importKey("raw", raw as BufferSource, "AES-GCM", false, ["encrypt", "decrypt"]);
+  const toHost = await aes(keys.slice(0, 32)), toCaller = await aes(keys.slice(32));
+  const send = caller ? toHost : toCaller, recv = caller ? toCaller : toHost;
+  let sendSeq = 0n, recvSeq = 0n, sealing: Promise<unknown> = Promise.resolve(), opening: Promise<unknown> = Promise.resolve();
+  return {
+    seal(kind, data) {
+      const run = sealing.then(async () => {
+        const head = new Uint8Array(9);
+        head[0] = kind;
+        new DataView(head.buffer).setBigUint64(1, sendSeq);
+        const sealed = await subtle.encrypt({ name: "AES-GCM", iv: nonceOf(sendSeq), additionalData: head }, send, data as BufferSource);
+        sendSeq++;
+        return join(head, new Uint8Array(sealed));
+      });
+      sealing = run.catch(() => undefined);
+      return run;
+    },
+    open(frame) {
+      const run = opening.then(async () => {
+        const f = new Uint8Array(frame);
+        if (f.length < 25) throw new Error("jinn: a terminal frame of the wrong size");
+        if (new DataView(f.buffer, f.byteOffset).getBigUint64(1) !== recvSeq) throw new Error("jinn: a terminal frame out of order");
+        const data = await subtle.decrypt({ name: "AES-GCM", iv: nonceOf(recvSeq), additionalData: f.slice(0, 9) as BufferSource }, recv, f.slice(9) as BufferSource);
+        recvSeq++;
+        return { kind: f[0], data: new Uint8Array(data) };
+      });
+      opening = run.catch(() => undefined);
+      return run;
+    },
+  };
 }
