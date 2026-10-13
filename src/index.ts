@@ -223,13 +223,13 @@ export class Jinn {
       signal?.throwIfAborted();
     }
   }
-  /** The run's commands that changed after a sequence, in order, and the run's sequence: the next since. */
+  /** The run's commands that changed after a sequence, in order, about 4 MiB at most, and the sequence to send as the next since. */
   commands(run: string, since = 0, waitSeconds = 0): Promise<{ state: Run["state"]; sequence: number; commands: Command[] }> {
     const p = new URLSearchParams({ since: String(since) });
     if (waitSeconds > 0) p.set("wait", String(Math.min(25, Math.floor(waitSeconds))));
     return this.call("GET", `/v1/runs/${encodeURIComponent(run)}/commands?${p}`);
   }
-  /** What a bash command wrote from an offset on; next is where to read next. */
+  /** What a bash command wrote from an offset on, 512 KiB at most; next is where to read next, and done says this is the last. */
   commandOutput(run: string, id: string, after = 0, waitSeconds = 0): Promise<{ output: string; next: number; output_bytes: number; stored_bytes: number; done: boolean }> {
     const p = new URLSearchParams({ after: String(after) });
     if (waitSeconds > 0) p.set("wait", String(Math.min(25, Math.floor(waitSeconds))));
