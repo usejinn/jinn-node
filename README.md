@@ -63,6 +63,8 @@ const { data } = await jinn.get(run.id, "/workspace/app/coverage"); // a folder 
 await jinn.finish(run.id, { state: "succeeded" });
 ```
 
+`openTerminal(run, rows, cols)` starts a shell in a run and returns the relay's ticket and an end-to-end channel: connect a WebSocket to `` `${ticket.relay_url}?route=${ticket.route}&side=caller` `` and seal and open its frames with the channel (docs: Commands, Open a terminal).
+
 `tools()` returns the standard tools' schemas, as Jinn's agent shows them to its model. A loop of your own can show its model the same tools and send each call as the command of the same kind.
 
 ## Get the result by webhook
