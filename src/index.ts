@@ -331,6 +331,10 @@ export class Jinn {
   publishProvider(id: string, model: Model, key: string): Promise<ProviderVersion> {
     return this.call("POST", `/v1/providers/${encodeURIComponent(id)}/versions`, { model, key });
   }
+  /** Delete a provider, its versions and their keys. While the latest version of a function names it, the API refuses with provider_in_use; while a run that uses it is queued or running, with runs_active. */
+  async deleteProvider(id: string): Promise<void> {
+    await this.call("DELETE", `/v1/providers/${encodeURIComponent(id)}`);
+  }
 }
 
 async function sha256(data: Uint8Array): Promise<string> {
