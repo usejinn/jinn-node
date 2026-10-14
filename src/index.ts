@@ -179,6 +179,10 @@ export class Jinn {
   publish(id: string, def: Definition): Promise<Version> {
     return this.call("POST", `/v1/functions/${encodeURIComponent(id)}/versions`, def);
   }
+  /** Delete a function, its versions and their secrets. Its runs and their images stay. While a run of it is queued or running, the API refuses with runs_active. */
+  async deleteFunction(id: string): Promise<void> {
+    await this.call("DELETE", `/v1/functions/${encodeURIComponent(id)}`);
+  }
 
   /** Start a run; every call is a new run. */
   startRun(fn: string, req: RunRequest): Promise<Run> {

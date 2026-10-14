@@ -1,6 +1,6 @@
 {
   "name": "@usejinn/sdk",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Jinn's API client: functions, runs and the commands that act on them.",
   "license": "MIT",
   "type": "module",

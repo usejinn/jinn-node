@@ -100,7 +100,7 @@ export async function POST(request: Request) {
 | `log(id)` | The run's log so far: setup, commands, the agent's messages and tool calls. |
 | `upload(bytes)` / `pack(files)` | Upload a file, or an input folder as one `.tar.gz`. Returns a `file_…` id. |
 | `output(run)` / `unpack(bytes)` | Download a succeeded run's output `.tar.gz` and read its files. |
-| `functions()`, `function(id)`, `createFunction(name, def)`, `publish(id, def)` | Read and publish functions. Each publish is a new version. |
+| `functions()`, `function(id)`, `createFunction(name, def)`, `publish(id, def)`, `deleteFunction(id)` | Read, publish and delete functions. Each publish is a new version. |
 | `providers()`, `createProvider(…)`, `publishProvider(…)` | Manage model providers and their keys. |
 | `verifyWebhook(publicKey, headers, body)` | Check a webhook and return its event. |
 
