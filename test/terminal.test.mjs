@@ -1,5 +1,5 @@
-// The SDK's terminal channel against the service's test vector
-// (service/terminal_test.go).
+// The SDK's terminal channel against the Go SDK's test vector
+// (sdk/go/terminal_test.go), which Jinn's hosts use.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
