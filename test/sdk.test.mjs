@@ -48,3 +48,23 @@ test("exec sends a bash command and long-polls its result", async () => {
     globalThis.fetch = real;
   }
 });
+
+test("startRun sends idempotency_key as the Idempotency-Key header, not in the body", async () => {
+  const { Jinn } = await import("../dist/index.js");
+  const seen = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    seen.push({ key: init.headers["Idempotency-Key"], body: init.body });
+    return new Response(JSON.stringify({ id: "run_1", state: "queued" }), { status: 201 });
+  };
+  try {
+    const jinn = new Jinn({ key: "jinn_test", baseURL: "https://api.test" });
+    await jinn.startRun("fnc_1", { prompt: "x", idempotency_key: "evt_1" });
+    await jinn.startRun("fnc_1", { prompt: "x" });
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(seen[0].key, "evt_1");
+  assert.deepEqual(JSON.parse(seen[0].body), { prompt: "x" });
+  assert.equal(seen[1].key, undefined);
+});

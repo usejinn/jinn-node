@@ -86,7 +86,7 @@ export async function POST(request: Request) {
 
 | Call | What it does |
 |---|---|
-| `startRun(fn, { prompt?, image?, environment?, input?, version?, webhook?, external_reference? })` | Start a run. Every call is a new run. |
+| `startRun(fn, { prompt?, image?, environment?, input?, version?, webhook?, external_reference?, idempotency_key? })` | Start a run. Each call is a new run, unless it repeats `idempotency_key` (sent as the `Idempotency-Key` header): then it returns the first run. |
 | `run(id)` / `wait(id)` / `waitReady(id)` | Read a run; read it until it ends, or until its setup has finished. |
 | `sendCommand(run, kind, args)` | Send a command: `bash`, `read`, `write`, `edit`, `list`, `put`, `get` or `finish`. |
 | `command(run, id, wait?)` / `waitCommand(run, id)` | Read a command; read it until it ends. |

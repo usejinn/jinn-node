@@ -95,6 +95,8 @@ export interface RunRequest {
   /** Added to the function's variables; a name the function has takes this value. */
   environment?: EnvVar[];
   input?: string; webhook?: string; external_reference?: string;
+  /** Sent as the Idempotency-Key header, not in the body: a start of the same function with the same key in the last 24 hours returns that run instead of a new one. */
+  idempotency_key?: string;
 }
 export interface Model { provider: "openai" | "anthropic" | "xai"; model: string; reasoning_effort?: string; compact_at_tokens: number; max_output_tokens?: number }
 export interface ProviderVersion { id: string; version: number; name: string; model: Model; created_at: string; created_by: string }
@@ -136,10 +138,10 @@ export class Jinn {
     this.baseURL = (opts.baseURL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   }
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async call<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const res = await fetch(this.baseURL + path, {
       method,
-      headers: { Authorization: `Bearer ${this.key}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { Authorization: `Bearer ${this.key}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -184,9 +186,11 @@ export class Jinn {
     await this.call("DELETE", `/v1/functions/${encodeURIComponent(id)}`);
   }
 
-  /** Start a run; every call is a new run. */
+  /** Start a run. Each call is a new run, unless it repeats an idempotency_key. */
   startRun(fn: string, req: RunRequest): Promise<Run> {
-    return this.call("POST", `/v1/functions/${encodeURIComponent(fn)}/runs`, req);
+    const { idempotency_key, ...body } = req;
+    return this.call("POST", `/v1/functions/${encodeURIComponent(fn)}/runs`, body,
+      idempotency_key === undefined ? {} : { "Idempotency-Key": idempotency_key });
   }
   run(id: string): Promise<Run> {
     return this.call("GET", `/v1/runs/${encodeURIComponent(id)}`);
