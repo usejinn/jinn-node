@@ -68,3 +68,35 @@ test("startRun sends idempotency_key as the Idempotency-Key header, not in the b
   assert.deepEqual(JSON.parse(seen[0].body), { prompt: "x" });
   assert.equal(seen[1].key, undefined);
 });
+
+test("logSince reads each part once, eight at a time, wherever a new part is listed", async () => {
+  const { Jinn } = await import("../dist/index.js");
+  const real = globalThis.fetch;
+  let listed = ["0001-host", "0003-agent"], open = 0, most = 0;
+  const reads = {};
+  globalThis.fetch = async (url) => {
+    const u = new URL(url);
+    if (u.pathname === "/v1/runs/run_1/log") {
+      return new Response(JSON.stringify({ parts: listed.map((p) => `https://s3.test/log/${p}.ndjson?X-Amz-Signature=${Math.random()}`) }));
+    }
+    const name = u.pathname.replace(/^\/log\/|\.ndjson$/g, "");
+    reads[name] = (reads[name] || 0) + 1;
+    most = Math.max(most, ++open);
+    await new Promise((r) => setTimeout(r, 5));
+    open--;
+    return new Response(JSON.stringify({ at: "2026-10-26T13:00:0" + name.slice(3, 4) + "Z", kind: name }) + "\n");
+  };
+  try {
+    const jinn = new Jinn({ key: "k", baseURL: "https://api.test" });
+    const read = new Set();
+    assert.deepEqual((await jinn.logSince("run_1", read)).map((e) => e.kind), ["0001-host", "0003-agent"]);
+    listed = ["0001-host", "0002-host", "0003-agent", "0004-agent"];
+    assert.deepEqual((await jinn.logSince("run_1", read)).map((e) => e.kind), ["0002-host", "0004-agent"]);
+    assert.ok(Object.values(reads).every((n) => n === 1), JSON.stringify(reads));
+    listed = Array.from({ length: 40 }, (_, i) => String(1000 + i).padStart(4, "0") + "-agent");
+    await jinn.log("run_1");
+    assert.equal(most, 8);
+  } finally {
+    globalThis.fetch = real;
+  }
+});

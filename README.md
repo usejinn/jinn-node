@@ -98,6 +98,7 @@ export async function POST(request: Request) {
 | `tools()` | The standard tools' schemas. |
 | `runs({ function?, state?, before? })` | List runs, newest first, a page at a time. |
 | `log(id)` | The run's log so far: setup, commands, the agent's messages and tool calls. |
+| `logSince(id, read)` | The events of the log's parts that the set `read` does not name yet; it adds them to `read`. Keep `read` to follow a run and read each part once. |
 | `upload(bytes)` / `pack(files)` | Upload a file, or an input folder as one `.tar.gz`. Returns a `file_…` id. |
 | `output(run)` / `unpack(bytes)` | Download a succeeded run's output `.tar.gz` and read its files. |
 | `functions()`, `function(id)`, `createFunction(name, def)`, `publish(id, def)`, `deleteFunction(id)` | Read, publish and delete functions. Each publish is a new version. |

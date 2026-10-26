@@ -297,14 +297,33 @@ export class Jinn {
     return this.call("GET", `/v1/runs?${p}`);
   }
   /** The run's log so far, in time order. A running run adds to it about every 30 seconds. */
-  async log(id: string): Promise<LogEvent[]> {
+  log(id: string): Promise<LogEvent[]> {
+    return this.logSince(id, new Set());
+  }
+  /**
+   * The events of the log's parts that `read` does not name yet, in time order; it adds them
+   * to `read`. A part never changes once written, so a caller that keeps `read` to follow a
+   * run reads each part once. Parts are named by their path: the host and the agent write
+   * their own, so a new part can be listed before one already read. Eight are read at once,
+   * because a long run's log is a thousand parts or more.
+   */
+  async logSince(id: string, read: Set<string>): Promise<LogEvent[]> {
     const { parts } = await this.call<{ parts: string[] }>("GET", `/v1/runs/${encodeURIComponent(id)}/log`);
+    const todo = parts.map((url) => ({ url, name: new URL(url).pathname })).filter((p) => !read.has(p.name));
+    const texts: string[] = new Array(todo.length);
+    let next = 0;
+    const reader = async () => {
+      while (next < todo.length) {
+        const i = next++;
+        const res = await fetch(todo[i].url);
+        if (!res.ok) throw new JinnError(res.status, "log part");
+        texts[i] = await res.text();
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, reader));
     const out: LogEvent[] = [];
-    for (const url of parts) {
-      const res = await fetch(url);
-      if (!res.ok) throw new JinnError(res.status, "log part");
-      for (const line of (await res.text()).split("\n")) if (line.trim()) out.push(JSON.parse(line));
-    }
+    for (const text of texts) for (const line of text.split("\n")) if (line.trim()) out.push(JSON.parse(line));
+    for (const p of todo) read.add(p.name);
     return out.sort((a, b) => a.at.localeCompare(b.at));
   }
 
