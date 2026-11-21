@@ -63,7 +63,15 @@ const { data } = await jinn.get(run.id, "/workspace/app/coverage"); // a folder 
 await jinn.finish(run.id, { state: "succeeded" });
 ```
 
-`openTerminal(run, rows, cols)` starts a shell in a run and returns the relay's ticket and an end-to-end channel: connect a WebSocket to `` `${ticket.relay_url}?route=${ticket.route}&side=caller` `` and seal and open its frames with the channel (docs: Commands, Open a terminal).
+`openTerminal(run)` and `openMachineTerminal(machine)` request a single-use 30-second WebSocket terminal ticket: connect a WebSocket to `terminalURL(ticket, rows, cols)` and use `encodeTerminalFrame`, `encodeResizeFrame`, and `decodeTerminalFrame` (docs: Commands, Open a terminal).
+
+## Persistent SSH machines
+
+```ts
+await jinn.addSSHKey({ name: "laptop", public_key: pubKey });
+const machine = await jinn.createMachine({ name: "dev", size: "m", idle_minutes: 10 });
+console.log("ssh", machine.ssh);
+```
 
 `tools()` returns the standard tools' schemas, as Jinn's agent shows them to its model. A loop of your own can show its model the same tools and send each call as the command of the same kind.
 
@@ -94,6 +102,10 @@ export async function POST(request: Request) {
 | `commandOutput(run, id, after?, wait?)` | What a bash command has written so far. |
 | `cancelCommand(run, id)` | Cancel a command. |
 | `exec`, `put`, `get`, `finish` | Send a command of that kind and wait for its result. |
+| `openTerminal(run)` / `openMachineTerminal(machine)` | Request a single-use 30-second WebSocket terminal ticket (`terminalURL`, `encodeTerminalFrame`, `encodeResizeFrame`, `decodeTerminalFrame`). |
+| `machines()`, `createMachine(req?)`, `machine(id)`, `updateMachine(id, req)`, `deleteMachine(id)` | Manage persistent SSH machines. |
+| `startMachine(id)`, `stopMachine(id)`, `snapshotMachine(id)` | Start, stop and snapshot machines. |
+| `sshKeys()`, `addSSHKey(req)`, `deleteSSHKey(id)` | Manage authorised account SSH public keys. |
 | `images()`, `image(id)`, `deleteImage(id)` | The account's images and Jinn's bases. |
 | `tools()` | The standard tools' schemas. |
 | `runs({ function?, state?, before? })` | List runs, newest first, a page at a time. |
