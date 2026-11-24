@@ -103,8 +103,9 @@ export async function POST(request: Request) {
 | `cancelCommand(run, id)` | Cancel a command. |
 | `exec`, `put`, `get`, `finish` | Send a command of that kind and wait for its result. |
 | `openTerminal(run)` / `openMachineTerminal(machine)` | Request a single-use 30-second WebSocket terminal ticket (`terminalURL`, `encodeTerminalFrame`, `encodeResizeFrame`, `decodeTerminalFrame`). |
-| `machines()`, `createMachine(req?)`, `machine(id)`, `updateMachine(id, req)`, `deleteMachine(id)` | Manage persistent SSH machines. |
-| `startMachine(id)`, `stopMachine(id)`, `snapshotMachine(id)` | Start, stop and snapshot machines. |
+| `machines()`, `createMachine(req?)`, `machine(id)`, `updateMachine(id, req)`, `deleteMachine(id)` | Manage persistent SSH machines (`setup`, `environment`, `webhook`, `external_reference`, `timeout_minutes`). |
+| `startMachine(id, req?)`, `stopMachine(id)`, `snapshotMachine(id)` | Start (with optional per-wake `environment`, `webhook`, `external_reference`), stop and snapshot machines. |
+| `heartbeatMachine(id, req?)` | Acquire, extend or release an activity lease (`lease_id`, `ttl_seconds`, `release`) on a running machine. |
 | `sshKeys()`, `addSSHKey(req)`, `deleteSSHKey(id)` | Manage authorised account SSH public keys. |
 | `images()`, `image(id)`, `deleteImage(id)` | The account's images and Jinn's bases. |
 | `tools()` | The standard tools' schemas. |
