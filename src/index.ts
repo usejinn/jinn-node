@@ -129,13 +129,28 @@ export interface SSHKey {
 export interface SSHKeyRequest { name: string; public_key: string }
 export interface Machine {
   id: string; account: string; slug: string; name?: string; size: Size; image: string;
-  image_deleted?: boolean; idle_minutes: number;
+  image_deleted?: boolean; setup?: string[]; environment?: EnvVar[]; webhook?: string;
+  external_reference?: string; timeout_minutes?: number; idle_minutes: number;
   state: "stopped" | "starting" | "running" | "stopping";
   active_run?: string; idle_since?: string; ssh?: string; active_connections: number;
   created_at: string; created_by: string;
 }
-export interface MachineRequest { name?: string; size?: Size; image?: string; idle_minutes?: number }
-export interface MachineUpdateRequest { name?: string; size?: Size; idle_minutes?: number }
+export interface MachineRequest {
+  name?: string; size?: Size; image?: string; idle_minutes?: number;
+  setup?: string[]; environment?: EnvVar[]; webhook?: string;
+  external_reference?: string; timeout_minutes?: number;
+}
+export interface MachineUpdateRequest {
+  name?: string; size?: Size; idle_minutes?: number;
+  setup?: string[]; environment?: EnvVar[]; webhook?: string;
+  external_reference?: string; timeout_minutes?: number;
+}
+export interface MachineStartRequest {
+  environment?: EnvVar[]; webhook?: string; external_reference?: string;
+}
+export interface MachineHeartbeatRequest {
+  lease_id?: string; ttl_seconds?: number; release?: boolean;
+}
 export interface Tool { name: string; description: string; parameters: Record<string, unknown> }
 
 /** The API's answer to a request it refused. `code` is stable (no_credit, suspended, not_found, …); the message is for people. */
@@ -330,14 +345,17 @@ export class Jinn {
   async deleteMachine(id: string): Promise<void> {
     await this.call("DELETE", `/v1/machines/${encodeURIComponent(id)}`);
   }
-  startMachine(id: string): Promise<Machine> {
-    return this.call("POST", `/v1/machines/${encodeURIComponent(id)}/start`);
+  startMachine(id: string, req?: MachineStartRequest): Promise<Machine> {
+    return this.call("POST", `/v1/machines/${encodeURIComponent(id)}/start`, req);
   }
   stopMachine(id: string): Promise<Machine> {
     return this.call("POST", `/v1/machines/${encodeURIComponent(id)}/stop`);
   }
   snapshotMachine(id: string): Promise<Image> {
     return this.call("POST", `/v1/machines/${encodeURIComponent(id)}/snapshot`);
+  }
+  heartbeatMachine(id: string, req?: MachineHeartbeatRequest): Promise<Machine> {
+    return this.call("POST", `/v1/machines/${encodeURIComponent(id)}/heartbeat`, req);
   }
   /** Runs newest first, a page at a time. A run key must name a function. */
   runs(q: { function?: string; state?: "active" | "succeeded" | "failed"; before?: string } = {}): Promise<{ runs: Run[]; next?: string }> {
